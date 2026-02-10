@@ -1,0 +1,243 @@
+blueprint:
+  name: Device Task Completion Notification
+  description: >
+    Sendet eine Nachricht, wenn ein Gerät (z.B. Waschmaschine oder Geschirrspüler)
+    laut Leistungssensor seinen Betrieb beendet hat.
+  domain: automation
+  source_url: https://raw.githubusercontent.com/Cavekeeper/HomeAssistant/main/Blueprints/Automation/job_complete_notifier.yaml
+  input:
+    power_sensor:
+      name: Power Sensor
+      description: >
+        Leistungssensor (z.B. von einem smarten Steckdosen-Gerät).
+      selector:
+        entity:
+          domain:
+          - sensor
+          multiple: false
+    start_hysterese_data:
+      name: Einstellungen Hysterese und Threshold
+      icon: mdi:arrow-collapse-up
+      collapsed: true
+      input:
+        starting_threshold:
+          name: Starting power threshold
+          description: >
+            Leistungsschwelle, ab der das Gerät als gestartet gilt.
+          default: 5
+          selector:
+            number:
+              min: 1.0
+              max: 100.0
+              unit_of_measurement: W
+              mode: slider
+              step: 1.0
+        starting_hysteresis:
+          name: Starting hysteresis
+          description: >
+            Dauer, die die Leistung über der Startschwelle bleiben muss.
+          default: 5
+          selector:
+            number:
+              min: 0.25
+              max: 60.0
+              unit_of_measurement: min
+              mode: slider
+              step: 0.25
+        finishing_threshold:
+          name: Finishing power threshold
+          description: >
+            Leistungsschwelle, unter der das Gerät als beendet gilt.
+          default: 5
+          selector:
+            number:
+              min: 1.0
+              max: 100.0
+              unit_of_measurement: W
+              mode: slider
+              step: 1.0
+        finishing_hysteresis:
+          name: Finishing hysteresis
+          description: >
+            Dauer, die die Leistung unterhalb der Abschaltschwelle bleiben muss.
+          default: 5
+          selector:
+            number:
+              min: 0.25
+              max: 60.0
+              unit_of_measurement: min
+              mode: slider
+              step: 0.25
+    start_notify_option:
+      name: Einstellungen Nachricht senden
+      icon: mdi:devices
+      collapsed: true
+      input:
+        notify_device:
+          name: Benachrichtigungs-Geräte
+          description: >
+            Wähle hier dein Handy oder andere Geräte aus, die die Nachricht erhalten sollen.
+          default: []
+          selector:
+            device:
+              filter:
+                - integration: mobile_app
+              multiple: true
+        notify_title:
+          name: Nachricht Titel
+          description: >
+            Titel der Benachrichtigung
+          default: Waschmaschine
+          selector: 
+            text:
+              multiline: false
+        notify_start_message:
+          name: Nachricht Start
+          description: >
+            Text der Benachrichtigung wenn das Gerät startet.
+          default: ist gestartet
+          selector:
+            text:
+              multiline: false
+        notify_end_message:
+          name: Nachricht Ende
+          description: >
+            Text der Benachrichtigung wenn das Gerät fertig ist.
+          default: ist fertig
+          selector:
+            text:
+              multiline: false
+    start_switch_option:
+      name: Einstellungen Sensor und Steckdose
+      icon: mdi:power-socket-de
+      collapsed: true
+      input:
+        notify_sensor:
+          name: Nachricht Sensor
+          description: >
+            Wähle einen Sensor der auslöst bei:
+
+            ist gestartet = on
+            
+            ist fertig = ready
+
+            Timeout = off
+          default: []
+          selector:
+            entity:
+              domain:
+                - input_select
+              reorder: false
+              multiple: false
+        power_plug:
+          name: Steckdosen
+          description: >
+            wähle die zu schaltende Steckdose
+          default: []
+          selector:
+            entity:
+              domain:
+                - switch
+              reorder: false
+              multiple: false
+
+variables:
+  notify_device: !input notify_device
+  notify_title: !input notify_title
+  notify_start_message: !input notify_start_message
+  notify_end_message: !input notify_end_message
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input power_sensor
+    above: !input starting_threshold
+    for:
+      minutes: !input starting_hysteresis
+
+condition: []
+
+action:
+  # 1. Start-Phase: Zeit merken & Nachricht
+  - variables:
+      start_time: "{{ now().timestamp() }}"
+  - choose:
+    - conditions:
+        - condition: template
+          value_template: "{{ notify_device | length > 0 }}"
+      sequence:
+        - alias: "Send start notification"
+          repeat:
+            for_each: !input notify_device
+            sequence:
+              - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                data:
+                  title: !input notify_title
+                  message: !input notify_start_message
+                continue_on_error: true
+        - action: input_select.select_option
+          target:
+            entity_id: !input notify_sensor
+          data:
+            option: "on"
+
+  # 2. Warte-Phase: Warten auf Abschluss oder Timeout
+  - wait_for_trigger:
+      - platform: numeric_state
+        entity_id: !input power_sensor
+        below: !input finishing_threshold
+        for:
+          minutes: !input finishing_hysteresis
+    timeout: "12:00:00"
+    continue_on_timeout: true
+
+  # 3. Entscheidungs-Phase
+  - choose:
+      # FALL A: Timeout
+      - conditions:
+          - condition: template
+            value_template: "{{ wait is defined and wait.trigger is none }}"
+        sequence:
+          - action: persistent_notification.create
+            data:
+              title: "⚠️ Problem: {{ notify_title }}"
+              message: "Das Gerät wurde gestartet, aber der End-Status wurde nicht erreicht."
+            continue_on_error: true
+          - action: input_select.select_option
+            target:
+              entity_id: !input notify_sensor
+            data:
+              option: "off"
+          - action: switch.turn_off
+            target:
+              entity_id: !input power_plug
+
+      # FALL B: Erfolg (Gerät ist innerhalb der Zeit fertig geworden)
+      - conditions:
+          - condition: template
+            value_template: "{{ wait is defined and wait.trigger is not none }}"
+          - condition: template
+            value_template: "{{ notify_device | length > 0 }}"
+        sequence:
+          - variables:
+              # Berechnung NUR hier im Erfolgsfall
+              end_time: "{{ now().timestamp() }}"
+              runtime: "{{ ((end_time | float - start_time | float) / 60) | round(0) }}"
+          - alias: "Send end notification"
+            repeat:
+              for_each: !input notify_device
+              sequence:
+                - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                  data:
+                    title: !input notify_title
+                    message: >-
+                      {{ notify_end_message }}
+                      
+                      Laufzeit: {{ runtime }} Minuten
+                  continue_on_error: true
+          - action: input_select.select_option
+            target:
+              entity_id: !input notify_sensor
+            data:
+              option: "ready"
+
+mode: single
