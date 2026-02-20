@@ -2,6 +2,7 @@ blueprint:
   name: Smart Light – Trigger
   description: >-
     **Version: 1.0.3**
+    
     Stabile Bewegungslicht-Automation mit Tag/Nacht-Bedingung, Hauptschalter und
     optionalem Sperrschalter.
   domain: automation

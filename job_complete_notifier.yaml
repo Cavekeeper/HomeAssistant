@@ -2,6 +2,7 @@ blueprint:
   name: Device Task Completion Notification
   description: >
     **Version: 1.0.1**
+    
     Sendet eine Nachricht, wenn ein Gerät (z.B. Waschmaschine oder Geschirrspüler)
     laut Leistungssensor seinen Betrieb beendet hat.
   domain: automation
