@@ -1,0 +1,61 @@
+blueprint:
+  name: Free@Home Virtual Switch Event Sync
+  description: >
+    **Version: 1.0.0**
+
+    Synchronisiert einen physischen Free@Home Schalter mit einem virtuellen Switch in Home Assistant basierend auf Events
+  domain: automation
+  
+  input:
+    switch_event:
+      name: Switch Event Entity
+      description: Die Event-Entity des physischen Schalters von Free@Home
+      selector:
+        entity:
+          domain: event
+    
+    virtual_switch:
+      name: Virtual Switch
+      description: Der virtuelle Switch der synchronisiert werden soll
+      selector:
+        entity:
+          domain: switch
+
+triggers:
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input switch_event
+
+conditions: []
+
+actions:
+  - variables:
+      value: "{{ trigger.event.data.new_state.attributes.event_type == \"On\" }}"
+  - choose:
+      - conditions:
+          - condition: and
+            conditions:
+              - condition: template
+                value_template: "{{ value }}"
+              - condition: state
+                entity_id: !input virtual_switch
+                state: "off"
+        sequence:
+          - action: switch.turn_on
+            target:
+              entity_id: !input virtual_switch
+      - conditions:
+          - condition: and
+            conditions:
+              - condition: template
+                value_template: "{{ value == false }}"
+              - condition: state
+                entity_id: !input virtual_switch
+                state: "on"
+        sequence:
+          - action: switch.turn_off
+            target:
+              entity_id: !input virtual_switch
+
+mode: single
