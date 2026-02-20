@@ -1,6 +1,7 @@
 blueprint:
   name: Device Task Completion Notification
   description: >
+    **Version: 1.0.1**
     Sendet eine Nachricht, wenn ein Gerät (z.B. Waschmaschine oder Geschirrspüler)
     laut Leistungssensor seinen Betrieb beendet hat.
   domain: automation
@@ -13,7 +14,7 @@ blueprint:
       selector:
         entity:
           domain:
-          - sensor
+            - sensor
           multiple: false
     start_hysterese_data:
       name: Einstellungen Hysterese und Threshold
@@ -83,12 +84,24 @@ blueprint:
               filter:
                 - integration: mobile_app
               multiple: true
+        notify_start_enabled:
+          name: Start-Nachricht senden?
+          description: Wenn aktiv, wird beim Start des Geräts eine Nachricht gesendet.
+          default: true
+          selector:
+            boolean: {}
+        notify_end_enabled:
+          name: Ende-Nachricht senden?
+          description: Wenn aktiv, wird beim Ende des Geräts eine Nachricht gesendet.
+          default: true
+          selector:
+            boolean: {}
         notify_title:
           name: Nachricht Titel
           description: >
             Titel der Benachrichtigung
           default: Waschmaschine
-          selector: 
+          selector:
             text:
               multiline: false
         notify_start_message:
@@ -118,7 +131,7 @@ blueprint:
             Wähle einen Sensor der auslöst bei:
 
             ist gestartet = on
-            
+
             ist fertig = ready
 
             Timeout = off
@@ -146,6 +159,8 @@ variables:
   notify_title: !input notify_title
   notify_start_message: !input notify_start_message
   notify_end_message: !input notify_end_message
+  notify_start_enabled: !input notify_start_enabled
+  notify_end_enabled: !input notify_end_enabled
 
 trigger:
   - platform: numeric_state
@@ -161,24 +176,24 @@ action:
   - variables:
       start_time: "{{ now().timestamp() }}"
   - choose:
-    - conditions:
-        - condition: template
-          value_template: "{{ notify_device | length > 0 }}"
-      sequence:
-        - alias: "Send start notification"
-          repeat:
-            for_each: !input notify_device
-            sequence:
-              - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                data:
-                  title: !input notify_title
-                  message: !input notify_start_message
-                continue_on_error: true
-        - action: input_select.select_option
-          target:
-            entity_id: !input notify_sensor
-          data:
-            option: "on"
+      - conditions:
+          - condition: template
+            value_template: "{{ notify_device | length > 0 and notify_start_enabled }}"
+        sequence:
+          - alias: "Send start notification"
+            repeat:
+              for_each: !input notify_device
+              sequence:
+                - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                  data:
+                    title: !input notify_title
+                    message: !input notify_start_message
+                  continue_on_error: true
+  - action: input_select.select_option
+    target:
+      entity_id: !input notify_sensor
+    data:
+      option: "on"
 
   # 2. Warte-Phase: Warten auf Abschluss oder Timeout
   - wait_for_trigger:
@@ -211,29 +226,31 @@ action:
             target:
               entity_id: !input power_plug
 
-      # FALL B: Erfolg (Gerät ist innerhalb der Zeit fertig geworden)
+      # FALL B: Erfolg
       - conditions:
           - condition: template
             value_template: "{{ wait is defined and wait.trigger is not none }}"
-          - condition: template
-            value_template: "{{ notify_device | length > 0 }}"
         sequence:
           - variables:
-              # Berechnung NUR hier im Erfolgsfall
               end_time: "{{ now().timestamp() }}"
               runtime: "{{ ((end_time | float - start_time | float) / 60) | round(0) }}"
-          - alias: "Send end notification"
-            repeat:
-              for_each: !input notify_device
-              sequence:
-                - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                  data:
-                    title: !input notify_title
-                    message: >-
-                      {{ notify_end_message }}
-                      
-                      Laufzeit: {{ runtime }} Minuten
-                  continue_on_error: true
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ notify_device | length > 0 and notify_end_enabled }}"
+                sequence:
+                  - alias: "Send end notification"
+                    repeat:
+                      for_each: !input notify_device
+                      sequence:
+                        - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                          data:
+                            title: !input notify_title
+                            message: >-
+                              {{ notify_end_message }}
+
+                              Laufzeit: {{ runtime }} Minuten
+                          continue_on_error: true
           - action: input_select.select_option
             target:
               entity_id: !input notify_sensor
