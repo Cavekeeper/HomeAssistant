@@ -1,0 +1,77 @@
+blueprint:
+  name: Gerät – Geplanter Reboot
+  description: >
+    **Version: 1.0.0**
+    
+    Führt einen automatischen Reboot eines Geräts zu einer konfigurierbaren
+    Uhrzeit an ausgewählten Wochentagen durch. Der Reboot wird nur ausgeführt,
+    wenn das Gerät aktuell erreichbar ist (device_tracker = home).
+  domain: automation
+  author: Thomas Lintzhoeft
+  source_url: https://raw.githubusercontent.com/Cavekeeper/HomeAssistant/main/geraet_geplanter_reboot.yaml
+  input:
+    device_tracker:
+      name: Device Tracker
+      description: Der device_tracker-Eintrag des Geräts (Erreichbarkeitsprüfung).
+      selector:
+        entity:
+          domain: device_tracker
+
+    reboot_button:
+      name: Reboot-Button
+      description: >
+        Der Button der Entität, der den Reboot auslöst
+        (z. B. „Restart" bei Shelly, Tasmota, etc.).
+      selector:
+        entity:
+          domain: button
+
+    reboot_time:
+      name: Uhrzeit
+      description: Uhrzeit, zu der der Reboot ausgeführt werden soll.
+      default: "03:00:00"
+      selector:
+        time: {}
+
+    weekdays:
+      name: Wochentage
+      description: An welchen Tagen soll der Reboot stattfinden?
+      default:
+        - tue
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Montag
+              value: mon
+            - label: Dienstag
+              value: tue
+            - label: Mittwoch
+              value: wed
+            - label: Donnerstag
+              value: thu
+            - label: Freitag
+              value: fri
+            - label: Samstag
+              value: sat
+            - label: Sonntag
+              value: sun
+
+triggers:
+  - trigger: time
+    at: !input reboot_time
+
+conditions:
+  - condition: state
+    entity_id: !input device_tracker
+    state:
+      - home
+  - condition: time
+    weekday: !input weekdays
+
+actions:
+  - action: button.press
+    target:
+      entity_id: !input reboot_button
+
+mode: single

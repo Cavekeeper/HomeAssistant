@@ -1,0 +1,69 @@
+blueprint:
+  name: Plug – Integration ein-/ausschalten
+  description: >
+    **Version: 1.0.0**
+
+    Aktiviert oder deaktiviert eine Home Assistant Integration (Config Entry),
+    sobald ein Gerät an- oder abgesteckt wird – erkannt über den
+    zugehörigen device_tracker. Funktioniert herstellerunabhängig mit jedem
+    Gerät, das einen device_tracker erzeugt (z. B. Shelly, Tasmota, etc.).
+  domain: automation
+  author: Thomas Lintzhoeft
+  source_url: https://raw.githubusercontent.com/Cavekeeper/HomeAssistant/main/plug_integration_toggle.yaml
+  input:
+    device_tracker:
+      name: Device Tracker
+      description: Der device_tracker-Eintrag des Geräts.
+      selector:
+        entity:
+          domain: device_tracker
+    config_entry:
+      name: Integration
+      description: >
+        Die Integration, die aktiviert bzw. deaktiviert werden soll,
+        wenn das Gerät an- oder abgesteckt wird.
+      selector:
+        config_entry: {}
+
+triggers:
+  - trigger: state
+    entity_id: !input device_tracker
+    to:
+      - home
+    for:
+      seconds: 5
+    id: zuhause
+
+  - trigger: state
+    entity_id: !input device_tracker
+    to:
+      - not_home
+      - unavailable
+    for:
+      seconds: 5
+    id: abwesend
+
+conditions: []
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id:
+              - zuhause
+        sequence:
+          - action: homeassistant.enable_config_entry
+            data:
+              config_entry_id: !input config_entry
+
+      - conditions:
+          - condition: trigger
+            id:
+              - abwesend
+        sequence:
+          - action: homeassistant.disable_config_entry
+            data:
+              config_entry_id: !input config_entry
+
+mode: queued
+max: 2
