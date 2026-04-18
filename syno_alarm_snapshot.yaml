@@ -138,4 +138,5 @@ action:
       target:
         entity_id: !input push_script
 
-mode: single
+mode: queued
+max: 3
